@@ -2,9 +2,9 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# --------------------------
+# ==============================
 # 页面配置
-# --------------------------
+# ==============================
 st.set_page_config(
     page_title="5G 信号可视化看板",
     page_icon="📶",
@@ -12,95 +12,101 @@ st.set_page_config(
 )
 
 st.title("📶 5G 信号可视化看板")
-st.markdown("### 基于路测数据的交互式信号监控平台")
+st.markdown("### Code with AI 海选赛作品")
+st.divider()
 
-# --------------------------
-# 1. 数据加载
-# --------------------------
+# ==============================
+# 1. 从项目 data 目录读取 CSV（比赛要求）
+# ==============================
 @st.cache_data
 def load_data():
     df = pd.read_csv("data/signal_samples.csv")
-    df = df.dropna(subset=["Longitude", "Latitude", "RSRP_dBm"])
-    df["Latitude"] = df["Latitude"].astype(float)
-    df["Longitude"] = df["Longitude"].astype(float)
+    df = df.dropna(subset=["Latitude", "Longitude", "RSRP_dBm"])
     return df
 
 df = load_data()
 
-# --------------------------
-# 2. 侧边栏筛选
-# --------------------------
+# ==============================
+# 2. 侧边栏筛选（进阶关卡）
+# ==============================
 st.sidebar.header("🔍 筛选条件")
 
 # 频段筛选
-band_list = sorted(df["Band"].unique())
-selected_bands = st.sidebar.multiselect(
-    "选择频段 (Band)",
-    options=band_list,
-    default=band_list
-)
+bands = sorted(df["Band"].unique())
+selected_band = st.sidebar.multiselect("选择频段", bands, default=bands)
 
 # RSRP 筛选
-rsrp_min, rsrp_max = int(df["RSRP_dBm"].min()), int(df["RSRP_dBm"].max())
-rsrp_range = st.sidebar.slider(
+rsrp_min = int(df["RSRP_dBm"].min())
+rsrp_max = int(df["RSRP_dBm"].max())
+rsrp_low, rsrp_high = st.sidebar.slider(
     "RSRP 信号强度 (dBm)",
     min_value=rsrp_min,
     max_value=rsrp_max,
     value=(rsrp_min, rsrp_max)
 )
 
-# 筛选数据
-filtered_df = df[
-    (df["Band"].isin(selected_bands)) &
-    (df["RSRP_dBm"] >= rsrp_range[0]) &
-    (df["RSRP_dBm"] <= rsrp_range[1])
-].copy()  # <-- 修复警告
+# 筛选后数据
+df_filtered = df[
+    (df["Band"].isin(selected_band)) &
+    (df["RSRP_dBm"] >= rsrp_low) &
+    (df["RSRP_dBm"] <= rsrp_high)
+].copy()
 
-st.sidebar.metric("筛选后信号点数", len(filtered_df))
+st.sidebar.metric("当前信号点数", len(df_filtered))
 
-# --------------------------
-# 3. 地图（高德底图 + 兼容所有版本）
-# --------------------------
-st.subheader("🌍 5G 信号分布地图（国内高德地图）")
+# ==============================
+# 3. 信号颜色定义（完全按比赛规则）
+# ==============================
+def get_color(rsrp):
+    if rsrp > -90:
+        return "#00FF00"   # 绿：强信号
+    elif rsrp < -110:
+        return "#FF0000"   # 红：弱信号
+    else:
+        return "#FFA500"   # 橙：中等
 
-# 直接使用 st.map() 最稳定写法，自动调用高德地图
+df_filtered["color"] = df_filtered["RSRP_dBm"].apply(get_color)
+
+# ==============================
+# 4. 地图（高德底图，秒开，颜色正确）
+# ==============================
+st.subheader("🌍 5G 信号分布地图")
 st.map(
-    data=filtered_df,
+    data=df_filtered,
     latitude="Latitude",
     longitude="Longitude",
+    color="color",
     size=15
 )
 
-# --------------------------
-# 4. 信号强度说明（颜色提示）
-# --------------------------
-st.markdown("""
-📌 **信号颜色说明**
-- 🟢 强信号：RSRP > -90 dBm
-- 🟠 中等信号：-110 ~ -90 dBm
-- 🔴 弱信号：RSRP < -110 dBm
-""")
+# 颜色说明
+st.caption("🟢 强信号(>-90dBm)  🟠 中等(-110~-90dBm)  🔴 弱信号(< -110dBm)")
 
-# --------------------------
-# 5. 数据统计图表
-# --------------------------
-st.subheader("📊 数据统计概览")
+# ==============================
+# 5. 数据统计图表（基础关卡必做）
+# ==============================
+st.divider()
+st.subheader("📊 数据统计")
+
 col1, col2 = st.columns(2)
 
 with col1:
     st.markdown("**各频段基站数量**")
-    band_count = filtered_df["Band"].value_counts().reset_index()
-    band_count.columns = ["频段", "数量"]
-    fig_bar = px.bar(band_count, x="频段", y="数量", color="频段")
-    st.plotly_chart(fig_bar, use_container_width=True)
+    band_count = df_filtered["Band"].value_counts().reset_index()
+    band_count.columns = ["Band", "count"]
+    fig1 = px.bar(band_count, x="Band", y="count", color="Band")
+    st.plotly_chart(fig1, use_container_width=True)
 
 with col2:
-    st.markdown("**信噪比 SINR 分布**")
-    fig_hist = px.histogram(filtered_df, x="SINR_dB")
-    st.plotly_chart(fig_hist, use_container_width=True)
+    st.markdown("**终端类型分布**")
+    terminal_count = df_filtered["TerminalType"].value_counts().reset_index()
+    terminal_count.columns = ["TerminalType", "count"]
+    fig2 = px.pie(terminal_count, values="count", names="TerminalType")
+    st.plotly_chart(fig2, use_container_width=True)
 
-# --------------------------
-# 6. 查看原始数据
-# --------------------------
-with st.expander("📄 查看筛选后原始数据"):
-    st.dataframe(filtered_df, use_container_width=True)
+# ==============================
+# 6. 数据预览
+# ==============================
+st.divider()
+with st.expander("查看原始数据"):
+    st.dataframe(df_filtered, use_container_width=True)
